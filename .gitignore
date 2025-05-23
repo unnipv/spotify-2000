@@ -289,3 +289,6 @@ secrets/
 keys/
 .secrets
 .credentials 
+
+# Cursor
+.cursorrules
