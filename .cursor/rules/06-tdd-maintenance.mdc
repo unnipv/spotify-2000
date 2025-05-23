@@ -1,0 +1,413 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# TDD Maintenance & Progress Tracking
+
+## Living Document Philosophy
+The [TDD.md](mdc:TDD.md) file is our **primary source of truth** and must be continuously updated to reflect actual progress, discoveries, bugs, and learnings.
+
+## When to Update TDD.md
+
+### Mandatory Updates
+**ALWAYS** update [TDD.md](mdc:TDD.md) when:
+- [ ] Completing any feature implementation
+- [ ] Discovering bugs or issues
+- [ ] Making architectural decisions or changes
+- [ ] Learning new Rust concepts that affect the project
+- [ ] Performance optimizations or measurements
+- [ ] API integration challenges or solutions
+- [ ] UI/UX changes or improvements
+- [ ] Testing results and findings
+- [ ] Deployment or build issues
+- [ ] Security considerations or implementations
+
+### Update Triggers
+Update [TDD.md](mdc:TDD.md) immediately after:
+```rust
+// EXPLAIN: "After implementing any significant function, update TDD progress"
+pub fn significant_function() -> Result<(), Error> {
+    // Implementation...
+    
+    // TODO: Update TDD.md with:
+    // - What was implemented
+    // - Any challenges faced
+    // - Performance observations
+    // - Next steps
+}
+```
+
+## TDD Update Structure
+
+### Progress Tracking Section
+Add this section to [TDD.md](mdc:TDD.md) after the conclusion:
+
+```markdown
+---
+
+# Development Progress & Observations
+
+## Implementation Status
+
+### Phase 1: Foundation (Months 1-3)
+#### Month 1: Core Infrastructure
+- [x] Project setup and development environment ✅ 2024-01-15
+- [x] Tauri application scaffold ✅ 2024-01-16
+- [ ] Basic Rust backend structure 🚧 In Progress
+- [ ] React frontend foundation
+- [ ] Spotify OAuth implementation
+- [ ] Basic audio playback integration
+
+**Observations & Learnings:**
+- Tauri setup was smoother than expected
+- Rust ownership concepts challenging but manageable
+- Need to focus more on error handling patterns
+
+**Bugs & Issues:**
+- None critical at this stage
+
+**Performance Notes:**
+- Initial app startup: ~2.3s (target: <2s)
+- Memory usage: 45MB baseline (target: <50MB)
+
+#### Month 2: Essential Features
+- [ ] Core UI components (transport controls, track display)
+- [ ] Spotify Web Playback SDK integration
+- [ ] Basic playlist management
+- [ ] Settings system
+- [ ] Local data storage
+
+#### Month 3: UI Polish and Testing
+- [ ] Complete Windows Media Player visual recreation
+- [ ] Audio visualization system
+- [ ] Theme system implementation
+- [ ] Comprehensive testing suite
+- [ ] Performance optimization
+
+### Architecture Decisions Log
+
+#### 2024-01-15: Framework Selection
+**Decision:** Chose Tauri over Electron
+**Reasoning:** 
+- Smaller bundle size (projected 10-40MB vs 100MB+)
+- Better performance with Rust backend
+- Native OS integration capabilities
+- Security benefits
+
+**Impact:** Requires learning Rust but provides better long-term foundation
+
+#### 2024-01-16: State Management
+**Decision:** Zustand for React state management
+**Reasoning:**
+- Simpler than Redux for this use case
+- Better TypeScript integration
+- Smaller learning curve for new Rust developer
+
+**Impact:** Cleaner frontend code, easier testing
+
+### Bug Tracking
+
+#### Critical Bugs
+Currently: None
+
+#### Non-Critical Issues
+Currently: None
+
+#### Resolved Bugs
+Currently: None
+
+### Performance Metrics
+
+#### Current Measurements
+- **Startup Time:** 2.3s (Target: <2s)
+- **Memory Usage:** 45MB baseline (Target: <50MB baseline, <150MB peak)
+- **CPU Usage:** Not yet measured (Target: <5% during playback)
+
+#### Performance Optimizations Applied
+Currently: None
+
+### Learning & Knowledge Transfer
+
+#### Rust Concepts Mastered
+- [x] Basic ownership and borrowing
+- [x] Result<T, E> error handling
+- [ ] Async/await patterns
+- [ ] Trait implementations
+- [ ] Lifetime management
+
+#### Challenges & Solutions
+**Challenge:** Understanding Rust ownership in audio processing context
+**Solution:** Used Arc<Mutex<T>> for shared audio state between threads
+**Learning:** Ownership becomes clearer with practical examples
+
+#### Resources Used
+- The Rust Book: Chapters 1-4 completed
+- Tauri Documentation: Getting Started guide
+- Spotify Web API Documentation: OAuth section
+
+### Security & Privacy Implementation
+
+#### Security Measures Implemented
+- [ ] OAuth 2.0 PKCE flow for Spotify authentication
+- [ ] Secure token storage in OS credential manager
+- [ ] Input validation for user data
+- [ ] Dependency security auditing
+
+#### Privacy Features
+- [ ] Optional telemetry with explicit consent
+- [ ] Local-first data storage
+- [ ] Clear data management options
+
+### API Integration Status
+
+#### Spotify Web API
+- [ ] Authentication flow
+- [ ] Playback control endpoints
+- [ ] Search functionality
+- [ ] Playlist management
+- [ ] User library access
+
+**Current Challenges:**
+- Rate limiting implementation
+- Error handling for network failures
+- Token refresh automation
+
+**Solutions Applied:**
+Currently: None
+
+### UI/UX Implementation
+
+#### Nostalgic Design Elements
+- [ ] Classic Windows Media Player button styling
+- [ ] Original color schemes (blue, silver, charcoal)
+- [ ] Authentic typography (Tahoma, MS Sans Serif)
+- [ ] Beveled edges and gradient fills
+- [ ] Original window chrome and titlebar
+
+**Design Challenges:**
+- Recreating exact pixel dimensions
+- CSS animations for authentic feel
+- High-DPI display scaling
+
+**Solutions:**
+Currently: None
+
+### Testing Results
+
+#### Unit Test Coverage
+Current: Not implemented
+Target: >80%
+
+#### Integration Test Results
+Current: Not implemented
+
+#### Performance Test Results
+Current: Not implemented
+
+#### Cross-Platform Test Status
+- [ ] Windows 10+
+- [ ] macOS 11+
+- [ ] Ubuntu 20.04+
+
+### Deployment & Distribution
+
+#### Build Pipeline Status
+- [ ] GitHub Actions CI/CD
+- [ ] Cross-platform builds
+- [ ] Code signing
+- [ ] Automated testing
+- [ ] Release automation
+
+#### Distribution Channels
+- [ ] GitHub Releases
+- [ ] Official website
+- [ ] Auto-updater implementation
+- [ ] Package managers (Chocolatey, Homebrew, etc.)
+
+### Future Enhancements Progress
+
+#### Phase 2 Features (6-12 months)
+- [ ] Enhanced Spotify Integration
+- [ ] Advanced Audio Features
+- [ ] Cloud sync capabilities
+
+#### Phase 3 Features (12-18 months)
+- [ ] Mobile companion app
+- [ ] Plugin system
+- [ ] Theme marketplace
+
+### Risk Mitigation Status
+
+#### Technical Risks
+- **Spotify API Changes:** Monitoring developer announcements ✅
+- **Performance Issues:** Early testing planned 📋
+- **Cross-Platform Compatibility:** CI setup planned 📋
+
+#### Legal Risks
+- **IP/Copyright Issues:** Legal review scheduled 📋
+- **Privacy Compliance:** GDPR review planned 📋
+
+### Community & Feedback
+
+#### User Feedback Received
+Currently: None (pre-release)
+
+#### Community Contributions
+Currently: None (early development)
+
+#### Feature Requests
+Currently: None (pre-release)
+
+---
+
+## Update Guidelines
+
+### Daily Updates
+At the end of each development session, add:
+```markdown
+#### YYYY-MM-DD Session Summary
+**Work Completed:**
+- Specific feature/bug/task completed
+- Code files modified
+- Tests added/updated
+
+**Challenges Faced:**
+- Technical obstacles encountered
+- Learning moments
+- Time spent debugging
+
+**Next Session Goals:**
+- Immediate next steps
+- Blockers to address
+- Research needed
+
+**Performance/Metrics:**
+- Any measurements taken
+- Memory/CPU observations
+- Build/test times
+```
+
+### Weekly Updates
+Every week, update:
+- Implementation status checkboxes
+- Performance metrics
+- Learning progress
+- Risk assessment
+
+### Milestone Updates
+At each major milestone:
+- Architecture decisions log
+- Comprehensive testing results
+- Performance benchmarks
+- Security audit results
+- User feedback integration
+
+## Change Documentation Format
+
+### Code Changes
+```markdown
+#### Feature: [Feature Name] - YYYY-MM-DD
+**Files Modified:**
+- `src/audio/controller.rs` - Added volume control
+- `src/ui/transport.tsx` - Integrated volume slider
+
+**Rust Concepts Applied:**
+- Used `Arc<Mutex<T>>` for thread-safe audio state
+- Implemented `Result<T, E>` error handling
+
+**Testing Added:**
+- Unit tests for volume bounds checking
+- Integration test for audio pipeline
+
+**Performance Impact:**
+- Memory: +2MB for audio buffers
+- CPU: <1% additional load
+
+**Observations:**
+- Rust's type system caught 3 potential bugs
+- Audio latency improved to 12ms
+```
+
+### Bug Fixes
+```markdown
+#### Bug Fix: [Bug Description] - YYYY-MM-DD
+**Issue:** 
+Detailed description of the bug
+
+**Root Cause:**
+Technical explanation of what caused it
+
+**Solution:**
+How it was fixed, code changes made
+
+**Prevention:**
+Tests or safeguards added to prevent recurrence
+
+**Files Changed:**
+List of modified files
+
+**Testing:**
+How the fix was verified
+```
+
+### Learning Documentation
+```markdown
+#### Learning: [Rust Concept] - YYYY-MM-DD
+**Concept Learned:**
+Ownership/Borrowing/Traits/etc.
+
+**Practical Application:**
+How it was used in the project
+
+**Code Example:**
+```rust
+// Example showing the concept in action
+```
+
+**Resources Used:**
+Links to documentation, tutorials, etc.
+
+**Time Investment:**
+Hours spent learning vs implementing
+```
+
+## Quality Assurance
+
+### Documentation Review Checklist
+Before any major commit, verify [TDD.md](mdc:TDD.md) includes:
+- [ ] Updated implementation status
+- [ ] Recent performance measurements
+- [ ] Any new bugs or issues discovered
+- [ ] Architecture decisions made
+- [ ] Learning progress documented
+- [ ] Security considerations addressed
+- [ ] Testing results updated
+
+### Automated Checks
+Consider adding CI checks for:
+- TDD.md modification dates
+- Required sections present
+- Progress tracking completeness
+
+## Integration with Development Workflow
+
+### Git Commit Integration
+Include TDD updates in commits:
+```bash
+git add TDD.md src/audio/controller.rs
+git commit -m "feat: implement volume control
+
+- Add volume adjustment with bounds checking
+- Update TDD.md with implementation progress
+- Add unit tests for edge cases
+
+Refs TDD Phase 1, Month 1 checklist"
+```
+
+### PR Review Process
+Every PR should include:
+- Relevant TDD.md updates
+- Progress tracking updates
+- Performance impact documentation
+- Learning documentation if applicable

@@ -1,0 +1,466 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Testing Strategy & Quality Assurance
+
+## Testing Philosophy
+Follow the testing pyramid from [TDD.md](mdc:TDD.md): 70% unit tests, 20% integration tests, 10% end-to-end tests.
+
+## Rust Backend Testing
+
+### Unit Testing Standards
+Every Rust module requires comprehensive tests:
+
+```rust
+// EXPLAIN: "Rust's built-in testing framework makes it easy to write
+// and run tests alongside your code."
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_volume_adjustment_within_bounds() {
+        // EXPLAIN: "We test normal operation first"
+        let mut controller = AudioController::new();
+        assert!(controller.set_volume(0.5).is_ok());
+        assert_eq!(controller.get_volume(), 0.5);
+    }
+    
+    #[test]
+    fn test_volume_adjustment_out_of_bounds() {
+        // EXPLAIN: "Then we test edge cases and error conditions"
+        let mut controller = AudioController::new();
+        
+        // Test upper bound
+        assert!(controller.set_volume(1.5).is_err());
+        
+        // Test lower bound
+        assert!(controller.set_volume(-0.1).is_err());
+        
+        // Ensure volume didn't change after invalid input
+        assert_eq!(controller.get_volume(), 0.5); // Default volume
+    }
+    
+    #[tokio::test]
+    async fn test_spotify_authentication_flow() {
+        // EXPLAIN: "Async tests use #[tokio::test] for async runtime"
+        let auth = SpotifyAuth::new("test_client_id".to_string());
+        let auth_url = auth.start_auth_flow().await;
+        
+        assert!(auth_url.is_ok());
+        assert!(auth_url.unwrap().contains("spotify.com/authorize"));
+    }
+}
+```
+
+### Integration Testing
+```rust
+// EXPLAIN: "Integration tests go in a separate 'tests' directory
+// and test how multiple modules work together."
+// tests/audio_integration.rs
+
+use spotify_media_player::{AudioController, SpotifyClient, PlaybackManager};
+
+#[tokio::test]
+async fn test_full_playback_pipeline() {
+    // EXPLAIN: "This tests the complete flow from Spotify API to audio output"
+    let spotify_client = SpotifyClient::new_with_mock_token();
+    let mut audio_controller = AudioController::new();
+    let mut playback_manager = PlaybackManager::new(spotify_client, audio_controller);
+    
+    // Test searching for a track
+    let tracks = playback_manager.search("test track").await
+        .expect("Search should succeed");
+    assert!(!tracks.is_empty());
+    
+    // Test playing the first track
+    let result = playback_manager.play_track(&tracks[0]).await;
+    assert!(result.is_ok());
+    
+    // Verify playback state
+    assert_eq!(playback_manager.get_state(), PlaybackState::Playing);
+}
+```
+
+### Mock Testing for External APIs
+```rust
+// EXPLAIN: "We use mocks to test API interactions without hitting real services"
+use mockito::{Matcher, Mock};
+
+#[tokio::test]
+async fn test_spotify_api_error_handling() {
+    let mut server = mockito::Server::new_async().await;
+    
+    // EXPLAIN: "Mock a 429 (rate limited) response from Spotify"
+    let mock = server
+        .mock("GET", "/v1/me/playlists")
+        .with_status(429)
+        .with_header("Retry-After", "60")
+        .create_async()
+        .await;
+    
+    let client = SpotifyClient::new_with_base_url(server.url());
+    let result = client.get_user_playlists().await;
+    
+    // EXPLAIN: "Verify that our client handles rate limiting correctly"
+    assert!(matches!(result, Err(SpotifyError::RateLimited { retry_after: 60 })));
+    mock.assert_async().await;
+}
+```
+
+## Frontend Testing Standards
+
+### Component Unit Tests
+```typescript
+// EXPLAIN: "React Testing Library focuses on testing user behavior
+// rather than implementation details."
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { TransportControls } from '../components/core/TransportControls';
+
+describe('TransportControls', () => {
+  const defaultProps = {
+    isPlaying: false,
+    canSkipNext: true,
+    canSkipPrevious: true,
+    onPlay: jest.fn(),
+    onPause: jest.fn(),
+    onNext: jest.fn(),
+    onPrevious: jest.fn(),
+  };
+
+  beforeEach(() => {
+    // EXPLAIN: "Clear all mocks before each test to ensure test isolation"
+    jest.clearAllMocks();
+  });
+
+  it('should call onPlay when play button is clicked', async () => {
+    const user = userEvent.setup();
+    render(<TransportControls {...defaultProps} />);
+    
+    const playButton = screen.getByRole('button', { name: /play/i });
+    await user.click(playButton);
+    
+    expect(defaultProps.onPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('should disable previous button when canSkipPrevious is false', () => {
+    render(<TransportControls {...defaultProps} canSkipPrevious={false} />);
+    
+    const previousButton = screen.getByRole('button', { name: /previous/i });
+    expect(previousButton).toBeDisabled();
+  });
+
+  it('should show pause icon when playing', () => {
+    render(<TransportControls {...defaultProps} isPlaying={true} />);
+    
+    const pauseButton = screen.getByRole('button', { name: /pause/i });
+    expect(pauseButton).toBeInTheDocument();
+  });
+});
+```
+
+### State Management Testing
+```typescript
+// EXPLAIN: "Test Zustand stores by testing state changes and actions"
+import { renderHook, act } from '@testing-library/react';
+import { useAppStore } from '../stores/appStore';
+
+describe('AppStore', () => {
+  beforeEach(() => {
+    // EXPLAIN: "Reset store state before each test"
+    useAppStore.setState(useAppStore.getInitialState());
+  });
+
+  it('should update volume correctly', () => {
+    const { result } = renderHook(() => useAppStore());
+    
+    act(() => {
+      result.current.setVolume(0.7);
+    });
+    
+    expect(result.current.player.volume).toBe(0.7);
+  });
+
+  it('should handle track loading states', () => {
+    const { result } = renderHook(() => useAppStore());
+    const mockTrack = {
+      id: '1',
+      name: 'Test Song',
+      artist: 'Test Artist',
+      album: 'Test Album',
+      duration: 180000,
+    };
+    
+    // Test loading state
+    act(() => {
+      result.current.setLoadingTrack(mockTrack.id);
+    });
+    
+    expect(result.current.player.playbackState).toEqual({
+      type: 'loading',
+      trackId: mockTrack.id,
+    });
+    
+    // Test playing state
+    act(() => {
+      result.current.setCurrentTrack(mockTrack);
+      result.current.setPlaying(true);
+    });
+    
+    expect(result.current.player.playbackState.type).toBe('playing');
+  });
+});
+```
+
+## Performance Testing
+
+### Memory and CPU Monitoring
+```rust
+// EXPLAIN: "Performance tests ensure we meet the memory and CPU targets
+// specified in the TDD (< 150MB memory, < 5% CPU)"
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    
+    #[tokio::test]
+    async fn test_memory_usage_under_continuous_playback() {
+        let mut player = create_test_player().await;
+        let initial_memory = get_current_memory_usage();
+        
+        // EXPLAIN: "Simulate 1 hour of continuous playback"
+        for _ in 0..3600 {
+            player.update_position().await;
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        
+        let final_memory = get_current_memory_usage();
+        let memory_growth = final_memory - initial_memory;
+        
+        // EXPLAIN: "Memory growth should be minimal during normal operation"
+        assert!(memory_growth < 10_000_000, "Memory grew by {}MB", memory_growth / 1_000_000);
+    }
+    
+    #[test]
+    fn test_audio_processing_performance() {
+        let audio_data = generate_test_audio_data(44100); // 1 second at 44.1kHz
+        let start = Instant::now();
+        
+        // EXPLAIN: "Audio processing must complete within one audio buffer
+        // to prevent dropouts (typically ~10ms for 512 sample buffer)"
+        let fft_result = compute_fft(&audio_data);
+        let processing_time = start.elapsed();
+        
+        assert!(processing_time < Duration::from_millis(5),
+                "Audio processing took {}ms, should be < 5ms", 
+                processing_time.as_millis());
+        assert_eq!(fft_result.len(), audio_data.len() / 2);
+    }
+}
+```
+
+### Frontend Performance Testing
+```typescript
+// EXPLAIN: "Performance tests for React components ensure smooth 60fps"
+import { render, screen } from '@testing-library/react';
+import { VirtualPlaylist } from '../components/VirtualPlaylist';
+
+describe('VirtualPlaylist Performance', () => {
+  it('should render large playlists without performance degradation', () => {
+    // EXPLAIN: "Test with a large dataset to ensure virtual scrolling works"
+    const largePlaylists = Array.from({ length: 10000 }, (_, i) => ({
+      id: `track-${i}`,
+      name: `Song ${i}`,
+      artist: `Artist ${i}`,
+      album: `Album ${i}`,
+      duration: 180000,
+    }));
+    
+    const startTime = performance.now();
+    render(<VirtualPlaylist tracks={largePlaylists} />);
+    const renderTime = performance.now() - startTime;
+    
+    // EXPLAIN: "Initial render should be fast even with large datasets"
+    expect(renderTime).toBeLessThan(100); // Less than 100ms
+    
+    // EXPLAIN: "Only a small subset should be in the DOM"
+    const renderedItems = screen.getAllByTestId('track-item');
+    expect(renderedItems.length).toBeLessThan(100); // Virtual scrolling active
+  });
+});
+```
+
+## Error Handling Testing
+
+### Comprehensive Error Scenarios
+```rust
+#[tokio::test]
+async fn test_network_failure_recovery() {
+    let mut client = SpotifyClient::new("invalid_token");
+    
+    // EXPLAIN: "Test that network failures are handled gracefully"
+    let result = client.get_user_playlists().await;
+    assert!(result.is_err());
+    
+    match result.unwrap_err() {
+        SpotifyError::Unauthorized => {
+            // EXPLAIN: "App should trigger re-authentication flow"
+            assert!(true);
+        }
+        SpotifyError::NetworkError => {
+            // EXPLAIN: "App should show offline mode"
+            assert!(true);
+        }
+        _ => panic!("Unexpected error type"),
+    }
+}
+```
+
+## Accessibility Testing
+
+### Automated Accessibility Tests
+```typescript
+// EXPLAIN: "Accessibility tests ensure the app works with screen readers
+// and keyboard navigation, maintaining the inclusive design from TDD"
+import { axe, toHaveNoViolations } from 'jest-axe';
+
+expect.extend(toHaveNoViolations);
+
+describe('Accessibility', () => {
+  it('should have no accessibility violations', async () => {
+    const { container } = render(<MainWindow />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('should support keyboard navigation', async () => {
+    const user = userEvent.setup();
+    render(<MainWindow />);
+    
+    // EXPLAIN: "Tab navigation should work through all interactive elements"
+    await user.tab();
+    expect(screen.getByRole('button', { name: /play/i })).toHaveFocus();
+    
+    await user.tab();
+    expect(screen.getByRole('button', { name: /next/i })).toHaveFocus();
+    
+    // EXPLAIN: "Space bar should activate the focused button"
+    await user.keyboard(' ');
+    // Verify next track was triggered
+  });
+});
+```
+
+## Cross-Platform Testing
+
+### Platform-Specific Test Matrix
+```yaml
+# .github/workflows/test.yml
+name: Cross-Platform Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable]
+        node: [18]
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node }}
+          
+      - name: Run Rust tests
+        run: cargo test --verbose
+        
+      - name: Run frontend tests
+        run: |
+          npm install
+          npm test -- --coverage
+          
+      - name: Run integration tests
+        run: npm run test:integration
+```
+
+## Test Data Management
+
+### Test Fixtures and Mocks
+```rust
+// EXPLAIN: "Centralized test data helps maintain consistency across tests"
+pub mod test_fixtures {
+    use super::*;
+    
+    pub fn sample_track() -> Track {
+        Track {
+            id: "test-track-1".to_string(),
+            name: "Test Song".to_string(),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            duration: 180000, // 3 minutes
+            spotify_uri: Some("spotify:track:test123".to_string()),
+            album_art: None,
+        }
+    }
+    
+    pub fn sample_playlist() -> Playlist {
+        Playlist {
+            id: "test-playlist-1".to_string(),
+            name: "Test Playlist".to_string(),
+            tracks: vec![sample_track()],
+            is_spotify: true,
+            is_public: false,
+            collaborative: false,
+        }
+    }
+}
+```
+
+## Quality Gates
+
+### Pre-commit Requirements
+All code must pass before committing:
+- [ ] All unit tests pass
+- [ ] Code coverage > 80%
+- [ ] No linting errors (Clippy for Rust, ESLint for TypeScript)
+- [ ] Performance benchmarks within acceptable ranges
+- [ ] Accessibility tests pass
+- [ ] Security audit clean (cargo audit, npm audit)
+
+### CI/CD Quality Checks
+```bash
+#!/bin/bash
+# EXPLAIN: "Automated quality checks ensure consistent code quality"
+
+# Rust quality checks
+cargo test --all
+cargo clippy -- -D warnings
+cargo audit
+cargo fmt -- --check
+
+# Frontend quality checks
+npm test -- --coverage --watchAll=false
+npm run lint
+npm run type-check
+npm audit --audit-level high
+
+# Cross-platform build verification
+cargo build --release --target x86_64-pc-windows-gnu
+cargo build --release --target x86_64-apple-darwin
+cargo build --release --target x86_64-unknown-linux-gnu
+```

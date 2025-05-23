@@ -1,0 +1,387 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Frontend Development: React + TypeScript + Nostalgic UI
+
+## UI Design Philosophy
+Reference the detailed UI specifications in [TDD.md](mdc:TDD.md) for all design decisions. The goal is **pixel-perfect recreation** of early 2000s Windows Media Player.
+
+## Component Architecture
+
+### Component Organization
+```
+src/
+├── components/
+│   ├── core/               // Core UI components
+│   │   ├── Transport.tsx   // Play/pause/skip controls
+│   │   ├── VolumeSlider.tsx
+│   │   └── ProgressBar.tsx
+│   ├── player/             // Player-specific components
+│   │   ├── NowPlaying.tsx
+│   │   ├── AlbumArt.tsx
+│   │   └── TrackInfo.tsx
+│   ├── visualizer/         // Audio visualization
+│   │   ├── Oscilloscope.tsx
+│   │   ├── SpectrumAnalyzer.tsx
+│   │   └── VisualizerCanvas.tsx
+│   └── layout/             // Layout components
+│       ├── MainWindow.tsx
+│       ├── TitleBar.tsx
+│       └── StatusBar.tsx
+```
+
+### TypeScript Standards
+Always use strict TypeScript with proper type definitions:
+
+```typescript
+// EXPLAIN: "We define precise interfaces for all data structures
+// to catch errors at compile time and improve code documentation."
+interface Track {
+  readonly id: string;
+  readonly name: string;
+  readonly artist: string;
+  readonly album: string;
+  readonly duration: number;
+  readonly spotifyUri?: string;
+  readonly albumArt?: string;
+}
+
+// EXPLAIN: "Using discriminated unions helps TypeScript understand
+// which properties are available based on the playback state."
+type PlaybackState = 
+  | { type: 'idle' }
+  | { type: 'loading'; trackId: string }
+  | { type: 'playing'; track: Track; position: number }
+  | { type: 'paused'; track: Track; position: number }
+  | { type: 'error'; message: string };
+```
+
+## State Management with Zustand
+
+### Store Structure
+```typescript
+interface AppState {
+  // Player state
+  player: {
+    currentTrack: Track | null;
+    playbackState: PlaybackState;
+    volume: number;
+    position: number;
+    queue: Track[];
+  };
+  
+  // UI state
+  ui: {
+    windowMode: 'full' | 'compact' | 'micro';
+    theme: 'blue' | 'silver' | 'black' | 'media-center';
+    visualizerType: 'oscilloscope' | 'spectrum' | 'bars';
+    showEqualizer: boolean;
+  };
+  
+  // Spotify integration
+  spotify: {
+    isAuthenticated: boolean;
+    user: SpotifyUser | null;
+    playlists: Playlist[];
+  };
+}
+
+// EXPLAIN: "Zustand provides a simpler alternative to Redux
+// with less boilerplate and better TypeScript integration."
+const useAppStore = create<AppState>((set, get) => ({
+  // Initial state and actions
+}));
+```
+
+## Nostalgic UI Implementation
+
+### Classic Windows Media Player Styling
+```scss
+// Variables for authentic WMP colors
+:root {
+  // Classic blue theme (default WMP)
+  --wmp-blue-primary: #316AC5;
+  --wmp-blue-secondary: #4A7BC8;
+  --wmp-blue-gradient: linear-gradient(to bottom, #4A7BC8, #316AC5);
+  
+  // Chrome and borders
+  --wmp-border-light: #E0E0E0;
+  --wmp-border-dark: #808080;
+  --wmp-button-highlight: #FFFFFF;
+  --wmp-button-shadow: #404040;
+  
+  // Typography
+  --wmp-font-primary: 'Tahoma', 'MS Sans Serif', sans-serif;
+  --wmp-font-mono: 'Courier New', monospace;
+}
+
+// Classic button styling with beveled edges
+.wmp-button {
+  background: var(--wmp-blue-gradient);
+  border: 2px outset var(--wmp-border-light);
+  font-family: var(--wmp-font-primary);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  
+  &:hover {
+    background: linear-gradient(to bottom, #5A8BCF, #4170C7);
+  }
+  
+  &:active {
+    border-style: inset;
+    background: linear-gradient(to bottom, #2E63BF, #4A7BC8);
+  }
+  
+  &:disabled {
+    background: #C0C0C0;
+    color: #808080;
+    cursor: not-allowed;
+  }
+}
+```
+
+### Transport Controls Component
+```typescript
+interface TransportControlsProps {
+  isPlaying: boolean;
+  canSkipNext: boolean;
+  canSkipPrevious: boolean;
+  onPlay: () => void;
+  onPause: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+}
+
+// EXPLAIN: "We use React.memo to prevent unnecessary re-renders
+// when parent components update but props haven't changed."
+const TransportControls: React.FC<TransportControlsProps> = React.memo(({
+  isPlaying,
+  canSkipNext,
+  canSkipPrevious,
+  onPlay,
+  onPause,
+  onNext,
+  onPrevious,
+}) => {
+  // EXPLAIN: "useCallback prevents function recreation on every render
+  // which is important for performance with frequent audio updates."
+  const handlePlayPause = useCallback(() => {
+    if (isPlaying) {
+      onPause();
+    } else {
+      onPlay();
+    }
+  }, [isPlaying, onPlay, onPause]);
+
+  return (
+    <div className="transport-controls">
+      <button 
+        className="wmp-button transport-button"
+        onClick={onPrevious}
+        disabled={!canSkipPrevious}
+        aria-label="Previous track"
+      >
+        ⏮
+      </button>
+      
+      <button 
+        className="wmp-button transport-button play-pause"
+        onClick={handlePlayPause}
+        aria-label={isPlaying ? 'Pause' : 'Play'}
+      >
+        {isPlaying ? '⏸' : '▶'}
+      </button>
+      
+      <button 
+        className="wmp-button transport-button"
+        onClick={onNext}
+        disabled={!canSkipNext}
+        aria-label="Next track"
+      >
+        ⏭
+      </button>
+    </div>
+  );
+});
+```
+
+## Audio Visualization Integration
+
+### Canvas-based Visualizer
+```typescript
+interface VisualizerProps {
+  audioData: Float32Array;
+  type: 'oscilloscope' | 'spectrum' | 'bars';
+  width: number;
+  height: number;
+  colorScheme: 'blue' | 'green' | 'rainbow';
+}
+
+const AudioVisualizer: React.FC<VisualizerProps> = ({
+  audioData,
+  type,
+  width,
+  height,
+  colorScheme
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // EXPLAIN: "useAnimationFrame hook provides smooth 60fps updates
+  // while automatically cleaning up when component unmounts."
+  useAnimationFrame(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !audioData.length) return;
+    
+    const ctx = canvas.getContext('2d')!;
+    drawVisualization(ctx, audioData, type, colorScheme);
+  });
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="audio-visualizer"
+    />
+  );
+};
+```
+
+## Tauri Integration
+
+### Frontend-Backend Communication
+```typescript
+// EXPLAIN: "Tauri provides type-safe communication between
+// the React frontend and Rust backend using invoke."
+import { invoke } from '@tauri-apps/api/tauri';
+
+class TauriAudioService {
+  // EXPLAIN: "We wrap Tauri invokes in a service class to provide
+  // better error handling and type safety."
+  async setVolume(volume: number): Promise<void> {
+    try {
+      await invoke('set_audio_volume', { volume });
+    } catch (error) {
+      console.error('Failed to set volume:', error);
+      throw new Error(`Volume adjustment failed: ${error}`);
+    }
+  }
+  
+  async getCurrentTrack(): Promise<Track | null> {
+    try {
+      return await invoke('get_current_track');
+    } catch (error) {
+      console.error('Failed to get current track:', error);
+      return null;
+    }
+  }
+}
+
+const audioService = new TauriAudioService();
+```
+
+## Performance Optimization
+
+### React Performance Patterns
+```typescript
+// EXPLAIN: "Virtual scrolling for large playlists prevents DOM bloat
+// and maintains smooth performance with thousands of tracks."
+const VirtualPlaylist: React.FC<{ tracks: Track[] }> = ({ tracks }) => {
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+  
+  // Only render visible tracks
+  const visibleTracks = useMemo(
+    () => tracks.slice(visibleRange.start, visibleRange.end),
+    [tracks, visibleRange]
+  );
+  
+  const handleScroll = useCallback((event: React.UIEvent) => {
+    // Calculate new visible range based on scroll position
+    const scrollTop = event.currentTarget.scrollTop;
+    const itemHeight = 20; // Height of each track item
+    const containerHeight = event.currentTarget.clientHeight;
+    
+    const start = Math.floor(scrollTop / itemHeight);
+    const end = Math.min(tracks.length, start + Math.ceil(containerHeight / itemHeight) + 5);
+    
+    setVisibleRange({ start, end });
+  }, [tracks.length]);
+
+  return (
+    <div className="playlist-container" onScroll={handleScroll}>
+      {visibleTracks.map(track => (
+        <TrackItem key={track.id} track={track} />
+      ))}
+    </div>
+  );
+};
+```
+
+## Accessibility Requirements
+
+### Keyboard Navigation
+```typescript
+// EXPLAIN: "Proper keyboard navigation is essential for accessibility
+// and matches the behavior of the original Windows Media Player."
+const useKeyboardControls = () => {
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      switch (event.code) {
+        case 'Space':
+          event.preventDefault();
+          // Toggle play/pause
+          break;
+        case 'ArrowRight':
+          // Skip forward 10 seconds
+          break;
+        case 'ArrowLeft':
+          // Skip backward 10 seconds
+          break;
+        case 'ArrowUp':
+          // Increase volume
+          break;
+        case 'ArrowDown':
+          // Decrease volume
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, []);
+};
+```
+
+## Testing Standards
+
+### Component Testing
+```typescript
+// EXPLAIN: "We use React Testing Library because it encourages
+// testing user behavior rather than implementation details."
+describe('TransportControls', () => {
+  it('toggles between play and pause states', async () => {
+    const mockOnPlay = jest.fn();
+    const mockOnPause = jest.fn();
+    
+    render(
+      <TransportControls
+        isPlaying={false}
+        canSkipNext={true}
+        canSkipPrevious={true}
+        onPlay={mockOnPlay}
+        onPause={mockOnPause}
+        onNext={jest.fn()}
+        onPrevious={jest.fn()}
+      />
+    );
+    
+    const playButton = screen.getByRole('button', { name: /play/i });
+    await user.click(playButton);
+    
+    expect(mockOnPlay).toHaveBeenCalledTimes(1);
+  });
+});
+```

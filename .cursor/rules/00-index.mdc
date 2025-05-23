@@ -1,0 +1,106 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Cursor Rules Index: Spotify Media Player Classic
+
+## Rules Overview
+This project uses multiple rule files to provide comprehensive guidance for developing a nostalgic Windows Media Player-inspired Spotify interface.
+
+## Rule Files Structure
+
+### 📋 [01-project-overview.mdc](mdc:.cursor/rules/01-project-overview.mdc)
+- Project context and goals from [TDD.md](mdc:TDD.md)
+- Technology stack overview
+- Development phases and success metrics
+- **Use when**: Starting work, understanding project scope
+
+### 🦀 [02-rust-learning-standards.mdc](mdc:.cursor/rules/02-rust-learning-standards.mdc)
+- **CRITICAL**: Educational Rust development focused on learning
+- Code explanation requirements with "EXPLAIN" comments
+- Ownership, borrowing, and async patterns
+- Error handling and testing standards
+- **Use when**: Writing any Rust code, learning Rust concepts
+
+### 🎨 [03-frontend-ui-development.mdc](mdc:.cursor/rules/03-frontend-ui-development.mdc)
+- React + TypeScript frontend development
+- Nostalgic Windows Media Player UI recreation
+- Component architecture and state management
+- Audio visualization and Tauri integration
+- **Use when**: Building UI components, styling, frontend logic
+
+### 🧪 [04-testing-quality.mdc](mdc:.cursor/rules/04-testing-quality.mdc)
+- Testing pyramid: 70% unit, 20% integration, 10% e2e
+- Performance testing and quality gates
+- Cross-platform testing strategies
+- **Use when**: Writing tests, ensuring code quality
+
+### 🎵 [05-spotify-integration.mdc](mdc:.cursor/rules/05-spotify-integration.mdc)
+- Spotify Web API and OAuth 2.0 PKCE authentication
+- Rate limiting and error handling
+- Web Playback SDK integration
+- **Use when**: Working with Spotify APIs, authentication
+
+### 📝 [06-tdd-maintenance.mdc](mdc:.cursor/rules/06-tdd-maintenance.mdc)
+- **MANDATORY**: Keep [TDD.md](mdc:TDD.md) as living document
+- Progress tracking and observation logging
+- Bug tracking and performance monitoring
+- Learning documentation and architecture decisions
+- **Use when**: After ANY significant work, daily/weekly updates
+
+## Quick Reference
+
+### For Rust Development
+```rust
+// ALWAYS include educational comments
+// EXPLAIN: "Describe what this Rust concept does and why"
+```
+
+### For React Development
+- Reference nostalgic UI specs in [TDD.md](mdc:TDD.md)
+- Use TypeScript strictly
+- Implement performance optimizations (virtual scrolling, memoization)
+
+### For Testing
+- Follow testing pyramid ratios
+- Include performance and accessibility tests
+- Mock external APIs (Spotify)
+
+### For Spotify Integration
+- Use PKCE flow for authentication
+- Implement rate limiting and retry logic
+- Cache responses to minimize API calls
+
+### For TDD Maintenance
+- **ALWAYS** update [TDD.md](mdc:TDD.md) after significant work
+- Document progress, bugs, learnings, and observations
+- Track performance metrics and architecture decisions
+
+## Development Workflow
+1. **Start**: Read [01-project-overview.mdc](mdc:.cursor/rules/01-project-overview.mdc) for context
+2. **Rust Code**: Follow [02-rust-learning-standards.mdc](mdc:.cursor/rules/02-rust-learning-standards.mdc) religiously
+3. **Frontend**: Apply [03-frontend-ui-development.mdc](mdc:.cursor/rules/03-frontend-ui-development.mdc) patterns
+4. **Testing**: Implement tests per [04-testing-quality.mdc](mdc:.cursor/rules/04-testing-quality.mdc)
+5. **Spotify**: Use [05-spotify-integration.mdc](mdc:.cursor/rules/05-spotify-integration.mdc) for API work
+6. **Document**: **MANDATORY** update [TDD.md](mdc:TDD.md) per [06-tdd-maintenance.mdc](mdc:.cursor/rules/06-tdd-maintenance.mdc)
+
+## Learning Focus
+**Remember**: The developer is new to Rust but enthusiastic about learning. ALWAYS:
+- Explain Rust concepts (ownership, borrowing, lifetimes)
+- Include detailed comments with "EXPLAIN:"
+- Show alternative approaches when applicable
+- Reference learning resources (The Rust Book, etc.)
+- **Document all learning in [TDD.md](mdc:TDD.md)**
+
+## Key Success Metrics from TDD
+- Performance: <150MB memory, <5% CPU during playback
+- UI Response: <200ms for all interactions
+- Cross-platform: Windows 10+, macOS 11+, Ubuntu 20.04+
+- Code Quality: >80% test coverage, no linting errors
+- **Documentation: [TDD.md](mdc:TDD.md) updated with every significant change**
+
+## Critical Reminders
+🚨 **NEVER** complete work without updating [TDD.md](mdc:TDD.md)
+🚨 **ALWAYS** document learnings, bugs, and observations
+🚨 **MANDATORY** progress tracking for accountability

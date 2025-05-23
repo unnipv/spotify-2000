@@ -1,0 +1,180 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rust Development: Learning-Focused Coding Standards
+
+## Learning Philosophy
+**IMPORTANT**: The developer is new to Rust but enthusiastic about learning. ALL Rust code should be educational and well-explained.
+
+## Code Explanation Requirements
+When writing Rust code, ALWAYS:
+
+1. **Explain Concepts**: Explain Rust-specific concepts like ownership, borrowing, lifetimes
+2. **Comment Thoroughly**: Include inline comments explaining Rust patterns
+3. **Show Alternatives**: When applicable, mention alternative approaches and why one was chosen
+4. **Memory Safety**: Explain how the code ensures memory safety
+5. **Error Handling**: Explain Rust's error handling patterns (Result, Option, etc.)
+
+## Code Style Standards
+
+### Naming Conventions
+```rust
+// Functions and variables: snake_case
+fn play_track() -> Result<(), AudioError> { }
+let current_volume = 0.5;
+
+// Types and structs: PascalCase
+struct AudioController { }
+enum PlaybackState { }
+
+// Constants: SCREAMING_SNAKE_CASE
+const MAX_VOLUME: f32 = 1.0;
+```
+
+### Error Handling Pattern
+Always use Result<T, E> for fallible operations:
+```rust
+// GOOD: Explicit error handling
+fn load_spotify_token() -> Result<String, AuthError> {
+    // Implementation with proper error propagation
+}
+
+// Explain: "We use Result here because loading tokens can fail
+// due to network issues, invalid credentials, etc."
+```
+
+### Documentation Standards
+Every public function needs documentation:
+```rust
+/// Adjusts the audio volume for the current playback session.
+/// 
+/// # Arguments
+/// * `volume` - A float between 0.0 (mute) and 1.0 (max volume)
+/// 
+/// # Returns
+/// * `Ok(())` if volume was successfully adjusted
+/// * `Err(AudioError)` if the audio system is unavailable
+/// 
+/// # Example
+/// ```rust
+/// controller.set_volume(0.75)?; // 75% volume
+/// ```
+pub fn set_volume(&mut self, volume: f32) -> Result<(), AudioError> {
+    // Implementation...
+}
+```
+
+## Rust Concept Integration
+
+### Ownership and Borrowing
+Always explain ownership decisions:
+```rust
+// EXPLAIN: "We take ownership of the track here because we need to 
+// store it in our player state. The caller transfers ownership."
+pub fn play_track(&mut self, track: Track) -> Result<(), PlaybackError> {
+    self.current_track = Some(track);
+    // ...
+}
+
+// EXPLAIN: "We borrow the playlist here because we only need to read it,
+// not take ownership. This allows the caller to keep using it."
+pub fn add_to_queue(&mut self, playlist: &Playlist) -> Result<(), QueueError> {
+    // ...
+}
+```
+
+### Async/Await Patterns
+Explain async decisions:
+```rust
+// EXPLAIN: "This function is async because it makes network calls
+// to the Spotify API, which can take time and shouldn't block the UI."
+pub async fn fetch_user_playlists(&self) -> Result<Vec<Playlist>, SpotifyError> {
+    let response = self.client.get("/me/playlists").send().await?;
+    // Parse and return playlists
+}
+```
+
+### Pattern Matching
+Use and explain match statements:
+```rust
+// EXPLAIN: "Pattern matching is safer than if/else chains because
+// the compiler ensures we handle all possible cases."
+match playback_state {
+    PlaybackState::Playing => self.pause().await?,
+    PlaybackState::Paused => self.resume().await?,
+    PlaybackState::Stopped => self.start_playback().await?,
+    PlaybackState::Error(e) => return Err(e.into()),
+}
+```
+
+## Dependencies and Crates
+When adding dependencies, explain the choice:
+```toml
+[dependencies]
+# tokio: Async runtime for handling network requests and audio processing
+tokio = { version = "1.0", features = ["full"] }
+
+# serde: Serialization framework for JSON API responses
+serde = { version = "1.0", features = ["derive"] }
+
+# rodio: Cross-platform audio playback library
+rodio = "0.17"
+```
+
+## Testing Requirements
+Every module should have tests with explanations:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_volume_bounds_checking() {
+        // EXPLAIN: "We test edge cases to ensure our volume control
+        // properly handles invalid input values."
+        let mut controller = AudioController::new();
+        
+        // Test that volume is clamped to valid range
+        assert!(controller.set_volume(1.5).is_err()); // Too high
+        assert!(controller.set_volume(-0.1).is_err()); // Too low
+        assert!(controller.set_volume(0.5).is_ok());   // Valid
+    }
+}
+```
+
+## Code Organization
+Follow Rust module conventions:
+```
+src/
+├── main.rs              // Entry point
+├── lib.rs               // Library root
+├── audio/               // Audio-related modules
+│   ├── mod.rs
+│   ├── controller.rs
+│   └── visualization.rs
+├── spotify/             // Spotify integration
+│   ├── mod.rs
+│   ├── auth.rs
+│   └── api.rs
+└── ui/                  // UI state management
+    ├── mod.rs
+    └── state.rs
+```
+
+## Performance Guidelines
+Always consider performance implications:
+```rust
+// EXPLAIN: "We use Arc<Mutex<T>> here for thread-safe sharing
+// of audio state between the UI and audio threads."
+use std::sync::{Arc, Mutex};
+
+type SharedAudioState = Arc<Mutex<AudioController>>;
+```
+
+## Learning Resources References
+When using advanced concepts, reference learning materials:
+- Ownership: "See The Rust Book Chapter 4"
+- Async: "See Async Book"
+- Error Handling: "See Rust by Example - Error Handling"

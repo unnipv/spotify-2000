@@ -1,0 +1,616 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Spotify Integration & API Management
+
+## Authentication & Security
+Follow the OAuth 2.0 PKCE flow detailed in [TDD.md](mdc:TDD.md) for secure desktop authentication.
+
+## Spotify Web API Integration
+
+### Required Scopes and Permissions
+```rust
+// EXPLAIN: "These scopes define what permissions our app needs from Spotify.
+// We request the minimum necessary permissions for security."
+const SPOTIFY_SCOPES: &[&str] = &[
+    "user-read-playback-state",      // Current playback information
+    "user-modify-playback-state",    // Control playback (play/pause/skip)
+    "user-read-currently-playing",   // Currently playing track
+    "user-library-read",             // Access saved tracks/albums
+    "playlist-read-private",         // Access private playlists
+    "playlist-read-collaborative",   // Access collaborative playlists
+    "user-read-recently-played",     // Recently played tracks
+];
+
+// EXPLAIN: "We organize scopes by functionality to make it clear
+// why each permission is needed."
+pub struct SpotifyPermissions {
+    pub playback_control: Vec<&'static str>,
+    pub library_access: Vec<&'static str>,
+    pub user_data: Vec<&'static str>,
+}
+
+impl SpotifyPermissions {
+    pub fn all_scopes() -> Vec<&'static str> {
+        let mut scopes = Vec::new();
+        scopes.extend(Self::playback_control());
+        scopes.extend(Self::library_access());
+        scopes.extend(Self::user_data());
+        scopes
+    }
+    
+    pub fn playback_control() -> Vec<&'static str> {
+        vec![
+            "user-read-playback-state",
+            "user-modify-playback-state",
+            "user-read-currently-playing",
+        ]
+    }
+}
+```
+
+### Authentication Implementation
+```rust
+use oauth2::{
+    AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier,
+    RedirectUrl, Scope, TokenResponse,
+};
+
+// EXPLAIN: "PKCE (Proof Key for Code Exchange) is required for desktop apps
+// because they can't securely store client secrets."
+pub struct SpotifyAuth {
+    client_id: ClientId,
+    redirect_uri: RedirectUrl,
+    auth_url: String,
+    token_url: String,
+    code_verifier: Option<PkceCodeVerifier>,
+}
+
+impl SpotifyAuth {
+    pub fn new(client_id: String) -> Result<Self, AuthError> {
+        // EXPLAIN: "We use localhost for the redirect URI in desktop apps.
+        // Spotify will redirect to this after user authorizes."
+        let redirect_uri = RedirectUrl::new("http://localhost:8888/callback".to_string())
+            .map_err(|e| AuthError::InvalidRedirectUri(e.to_string()))?;
+            
+        Ok(Self {
+            client_id: ClientId::new(client_id),
+            redirect_uri,
+            auth_url: "https://accounts.spotify.com/authorize".to_string(),
+            token_url: "https://accounts.spotify.com/api/token".to_string(),
+            code_verifier: None,
+        })
+    }
+    
+    pub async fn start_auth_flow(&mut self) -> Result<String, AuthError> {
+        // EXPLAIN: "PKCE uses a code challenge to verify the request came from us"
+        let (code_challenge, code_verifier) = PkceCodeChallenge::new_random_sha256();
+        self.code_verifier = Some(code_verifier);
+        
+        // EXPLAIN: "Build the authorization URL with all required parameters"
+        let auth_url = format!(
+            "{}?client_id={}&response_type=code&redirect_uri={}&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
+            self.auth_url,
+            self.client_id.as_str(),
+            urlencoding::encode(self.redirect_uri.as_str()),
+            urlencoding::encode(&SPOTIFY_SCOPES.join(" ")),
+            code_challenge.as_str(),
+            generate_state_token() // CSRF protection
+        );
+        
+        Ok(auth_url)
+    }
+    
+    pub async fn exchange_code(&self, code: String) -> Result<TokenResponse, AuthError> {
+        // EXPLAIN: "Exchange the authorization code for access and refresh tokens"
+        let code_verifier = self.code_verifier.as_ref()
+            .ok_or(AuthError::MissingCodeVerifier)?;
+            
+        let params = [
+            ("grant_type", "authorization_code"),
+            ("client_id", self.client_id.as_str()),
+            ("code", &code),
+            ("redirect_uri", self.redirect_uri.as_str()),
+            ("code_verifier", code_verifier.secret()),
+        ];
+        
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&self.token_url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(AuthError::NetworkError)?;
+            
+        if response.status().is_success() {
+            let token_response: TokenResponse = response.json().await
+                .map_err(AuthError::ParseError)?;
+            Ok(token_response)
+        } else {
+            let error_text = response.text().await.unwrap_or_default();
+            Err(AuthError::TokenExchangeFailed(error_text))
+        }
+    }
+}
+```
+
+### API Client with Rate Limiting
+```rust
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tokio::time::{Duration, Instant, sleep};
+
+// EXPLAIN: "Rate limiting prevents us from hitting Spotify's API limits
+// and getting temporarily blocked."
+#[derive(Debug, Clone)]
+pub struct RateLimiter {
+    requests: Arc<RwLock<HashMap<String, Vec<Instant>>>>,
+    requests_per_window: usize,
+    window_duration: Duration,
+}
+
+impl RateLimiter {
+    pub fn new(requests_per_window: usize, window_duration: Duration) -> Self {
+        Self {
+            requests: Arc::new(RwLock::new(HashMap::new())),
+            requests_per_window,
+            window_duration,
+        }
+    }
+    
+    pub async fn wait_if_needed(&self, endpoint: &str) -> Result<(), RateLimitError> {
+        let mut requests = self.requests.write().await;
+        let now = Instant::now();
+        
+        // EXPLAIN: "Clean up old requests outside the rate limit window"
+        let endpoint_requests = requests.entry(endpoint.to_string()).or_default();
+        endpoint_requests.retain(|&request_time| {
+            now.duration_since(request_time) < self.window_duration
+        });
+        
+        // EXPLAIN: "If we're at the limit, wait until we can make another request"
+        if endpoint_requests.len() >= self.requests_per_window {
+            let oldest_request = endpoint_requests[0];
+            let wait_time = self.window_duration - now.duration_since(oldest_request);
+            sleep(wait_time).await;
+        }
+        
+        // EXPLAIN: "Record this request"
+        endpoint_requests.push(now);
+        Ok(())
+    }
+}
+
+pub struct SpotifyClient {
+    base_url: String,
+    access_token: Option<String>,
+    client: reqwest::Client,
+    rate_limiter: RateLimiter,
+}
+
+impl SpotifyClient {
+    pub fn new() -> Self {
+        Self {
+            base_url: "https://api.spotify.com/v1".to_string(),
+            access_token: None,
+            client: reqwest::Client::new(),
+            // EXPLAIN: "Spotify allows ~100 requests per minute for most endpoints"
+            rate_limiter: RateLimiter::new(100, Duration::from_secs(60)),
+        }
+    }
+    
+    pub fn set_access_token(&mut self, token: String) {
+        self.access_token = Some(token);
+    }
+    
+    async fn make_request<T>(&self, endpoint: &str) -> Result<T, SpotifyApiError> 
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        // EXPLAIN: "Wait for rate limiter before making the request"
+        self.rate_limiter.wait_if_needed(endpoint).await?;
+        
+        let token = self.access_token.as_ref()
+            .ok_or(SpotifyApiError::NotAuthenticated)?;
+            
+        let url = format!("{}/{}", self.base_url, endpoint);
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .map_err(SpotifyApiError::NetworkError)?;
+            
+        match response.status() {
+            reqwest::StatusCode::OK => {
+                let data: T = response.json().await
+                    .map_err(SpotifyApiError::ParseError)?;
+                Ok(data)
+            }
+            reqwest::StatusCode::UNAUTHORIZED => {
+                Err(SpotifyApiError::Unauthorized)
+            }
+            reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                // EXPLAIN: "Handle 429 responses with exponential backoff"
+                let retry_after = response.headers()
+                    .get("Retry-After")
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(60);
+                Err(SpotifyApiError::RateLimited { retry_after })
+            }
+            status => {
+                let error_text = response.text().await.unwrap_or_default();
+                Err(SpotifyApiError::HttpError { 
+                    status: status.as_u16(), 
+                    message: error_text 
+                })
+            }
+        }
+    }
+}
+```
+
+### Spotify Web Playback SDK Integration
+```typescript
+// EXPLAIN: "The Web Playback SDK allows us to control Spotify playback
+// directly in our app, making it a Spotify Connect device."
+class SpotifyWebPlayer {
+  private player: Spotify.Player | null = null;
+  private deviceId: string | null = null;
+  private accessToken: string;
+  
+  constructor(accessToken: string) {
+    this.accessToken = accessToken;
+  }
+  
+  async initialize(): Promise<void> {
+    // EXPLAIN: "We need to wait for the Spotify Web Playback SDK to load"
+    if (!window.Spotify) {
+      throw new Error('Spotify Web Playback SDK not loaded');
+    }
+    
+    this.player = new window.Spotify.Player({
+      name: 'Spotify Media Player Classic',
+      getOAuthToken: (callback: (token: string) => void) => {
+        callback(this.accessToken);
+      },
+      volume: 0.5
+    });
+    
+    this.setupEventListeners();
+    
+    // EXPLAIN: "Connect to Spotify's servers"
+    const success = await this.player.connect();
+    if (!success) {
+      throw new Error('Failed to connect to Spotify');
+    }
+  }
+  
+  private setupEventListeners(): void {
+    if (!this.player) return;
+    
+    // EXPLAIN: "The 'ready' event gives us our device ID"
+    this.player.addListener('ready', ({ device_id }) => {
+      console.log('Ready with Device ID', device_id);
+      this.deviceId = device_id;
+    });
+    
+    // EXPLAIN: "Handle player state changes for UI updates"
+    this.player.addListener('player_state_changed', (state) => {
+      if (!state) return;
+      
+      const {
+        current_track: currentTrack,
+        position,
+        duration,
+        paused,
+        shuffle,
+        repeat_mode,
+      } = state;
+      
+      // EXPLAIN: "Emit events that our UI can listen to"
+      this.emitStateChange({
+        currentTrack,
+        position,
+        duration,
+        isPlaying: !paused,
+        shuffle,
+        repeatMode: repeat_mode,
+      });
+    });
+    
+    // EXPLAIN: "Handle errors gracefully"
+    this.player.addListener('initialization_error', ({ message }) => {
+      console.error('Failed to initialize:', message);
+    });
+    
+    this.player.addListener('authentication_error', ({ message }) => {
+      console.error('Failed to authenticate:', message);
+      // EXPLAIN: "Trigger token refresh flow"
+      this.handleAuthenticationError();
+    });
+  }
+  
+  async play(spotifyUri?: string): Promise<void> {
+    if (!this.deviceId) {
+      throw new Error('Player not ready');
+    }
+    
+    // EXPLAIN: "Use the Web API to start playback on our device"
+    const endpoint = `https://api.spotify.com/v1/me/player/play?device_id=${this.deviceId}`;
+    const body = spotifyUri ? { uris: [spotifyUri] } : {};
+    
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.accessToken}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to start playback: ${response.statusText}`);
+    }
+  }
+  
+  async pause(): Promise<void> {
+    if (this.player) {
+      await this.player.pause();
+    }
+  }
+  
+  async resume(): Promise<void> {
+    if (this.player) {
+      await this.player.resume();
+    }
+  }
+  
+  async setVolume(volume: number): Promise<void> {
+    // EXPLAIN: "Volume should be between 0.0 and 1.0"
+    const clampedVolume = Math.max(0, Math.min(1, volume));
+    if (this.player) {
+      await this.player.setVolume(clampedVolume);
+    }
+  }
+}
+```
+
+### Data Models and Type Safety
+```typescript
+// EXPLAIN: "Strong typing helps catch errors at compile time and 
+// provides better IDE support."
+interface SpotifyTrack {
+  readonly id: string;
+  readonly name: string;
+  readonly artists: SpotifyArtist[];
+  readonly album: SpotifyAlbum;
+  readonly duration_ms: number;
+  readonly uri: string;
+  readonly external_urls: {
+    spotify: string;
+  };
+  readonly preview_url?: string;
+  readonly popularity: number;
+  readonly explicit: boolean;
+}
+
+interface SpotifyArtist {
+  readonly id: string;
+  readonly name: string;
+  readonly uri: string;
+  readonly external_urls: {
+    spotify: string;
+  };
+}
+
+interface SpotifyAlbum {
+  readonly id: string;
+  readonly name: string;
+  readonly images: SpotifyImage[];
+  readonly release_date: string;
+  readonly uri: string;
+}
+
+interface SpotifyImage {
+  readonly url: string;
+  readonly height: number;
+  readonly width: number;
+}
+
+// EXPLAIN: "Convert Spotify API responses to our internal format"
+export function mapSpotifyTrack(spotifyTrack: SpotifyTrack): Track {
+  return {
+    id: spotifyTrack.id,
+    name: spotifyTrack.name,
+    artist: spotifyTrack.artists.map(a => a.name).join(', '),
+    album: spotifyTrack.album.name,
+    duration: spotifyTrack.duration_ms,
+    spotifyUri: spotifyTrack.uri,
+    albumArt: spotifyTrack.album.images[0]?.url,
+    popularity: spotifyTrack.popularity,
+  };
+}
+```
+
+### Error Handling and Recovery
+```rust
+// EXPLAIN: "Comprehensive error handling for all possible API failures"
+#[derive(Debug, thiserror::Error)]
+pub enum SpotifyApiError {
+    #[error("Not authenticated with Spotify")]
+    NotAuthenticated,
+    
+    #[error("Authentication failed: {0}")]
+    AuthenticationFailed(String),
+    
+    #[error("Rate limited. Retry after {retry_after} seconds")]
+    RateLimited { retry_after: u64 },
+    
+    #[error("Network error: {0}")]
+    NetworkError(#[from] reqwest::Error),
+    
+    #[error("Failed to parse response: {0}")]
+    ParseError(#[from] serde_json::Error),
+    
+    #[error("HTTP error {status}: {message}")]
+    HttpError { status: u16, message: String },
+    
+    #[error("Spotify service unavailable")]
+    ServiceUnavailable,
+    
+    #[error("Invalid request: {0}")]
+    BadRequest(String),
+}
+
+impl SpotifyApiError {
+    // EXPLAIN: "Determine if an error is worth retrying"
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, 
+            SpotifyApiError::RateLimited { .. } |
+            SpotifyApiError::NetworkError(_) |
+            SpotifyApiError::ServiceUnavailable
+        )
+    }
+    
+    // EXPLAIN: "Get suggested retry delay for retryable errors"
+    pub fn retry_delay(&self) -> Option<Duration> {
+        match self {
+            SpotifyApiError::RateLimited { retry_after } => {
+                Some(Duration::from_secs(*retry_after))
+            }
+            SpotifyApiError::NetworkError(_) => {
+                Some(Duration::from_secs(5)) // 5 second backoff
+            }
+            SpotifyApiError::ServiceUnavailable => {
+                Some(Duration::from_secs(30)) // 30 second backoff
+            }
+            _ => None,
+        }
+    }
+}
+
+// EXPLAIN: "Retry logic with exponential backoff"
+pub async fn retry_with_backoff<F, T, E>(
+    mut operation: F,
+    max_retries: usize,
+) -> Result<T, E>
+where
+    F: FnMut() -> Pin<Box<dyn Future<Output = Result<T, E>> + Send>>,
+    E: std::fmt::Debug,
+{
+    let mut attempts = 0;
+    
+    loop {
+        match operation().await {
+            Ok(result) => return Ok(result),
+            Err(error) if attempts < max_retries => {
+                let delay = Duration::from_millis(100 * 2_u64.pow(attempts as u32));
+                tokio::time::sleep(delay).await;
+                attempts += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+```
+
+### Caching Strategy
+```rust
+use lru::LruCache;
+use std::collections::HashMap;
+use tokio::sync::RwLock;
+
+// EXPLAIN: "Caching reduces API calls and improves performance"
+pub struct SpotifyCache {
+    tracks: RwLock<LruCache<String, Track>>,
+    playlists: RwLock<LruCache<String, Playlist>>,
+    album_art: RwLock<LruCache<String, Vec<u8>>>,
+}
+
+impl SpotifyCache {
+    pub fn new() -> Self {
+        Self {
+            // EXPLAIN: "LRU cache automatically evicts least recently used items"
+            tracks: RwLock::new(LruCache::new(1000)),
+            playlists: RwLock::new(LruCache::new(100)),
+            album_art: RwLock::new(LruCache::new(500)),
+        }
+    }
+    
+    pub async fn get_track(&self, id: &str) -> Option<Track> {
+        let mut cache = self.tracks.write().await;
+        cache.get(id).cloned()
+    }
+    
+    pub async fn cache_track(&self, track: Track) {
+        let mut cache = self.tracks.write().await;
+        cache.put(track.id.clone(), track);
+    }
+    
+    pub async fn get_album_art(&self, url: &str) -> Option<Vec<u8>> {
+        let mut cache = self.album_art.write().await;
+        cache.get(url).cloned()
+    }
+    
+    pub async fn cache_album_art(&self, url: String, data: Vec<u8>) {
+        let mut cache = self.album_art.write().await;
+        cache.put(url, data);
+    }
+}
+```
+
+## Testing Spotify Integration
+
+### Mock Spotify Responses
+```rust
+// EXPLAIN: "Use mocks to test API integration without hitting real endpoints"
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockito::{Mock, Server};
+    
+    #[tokio::test]
+    async fn test_track_search() {
+        let mut server = Server::new_async().await;
+        
+        let mock_response = json!({
+            "tracks": {
+                "items": [{
+                    "id": "test123",
+                    "name": "Test Song",
+                    "artists": [{"name": "Test Artist"}],
+                    "album": {
+                        "name": "Test Album",
+                        "images": [{"url": "http://example.com/image.jpg"}]
+                    },
+                    "duration_ms": 180000,
+                    "uri": "spotify:track:test123"
+                }]
+            }
+        });
+        
+        let mock = server
+            .mock("GET", "/v1/search")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_response.to_string())
+            .create_async()
+            .await;
+            
+        let mut client = SpotifyClient::new();
+        client.set_base_url(server.url());
+        client.set_access_token("test_token".to_string());
+        
+        let results = client.search("test query", SearchType::Track).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "Test Song");
+        
+        mock.assert_async().await;
+    }
+}
+```
